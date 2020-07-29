@@ -420,7 +420,12 @@ func (c *Conn) sendRequest(
 	return rq.recvChan, nil
 }
 
+func (c *Conn) sessionExpired(d time.Time) bool {
+	return d.Add(time.Duration(c.sessionTimeoutMs) * time.Millisecond).Before(time.Now())
+}
+
 func (c *Conn) loop(ctx context.Context) {
+	var disconnectTime time.Time
 	for {
 		if err := c.connect(); err != nil {
 			// c.Close() was called
@@ -429,12 +434,15 @@ func (c *Conn) loop(ctx context.Context) {
 
 		err := c.authenticate()
 		switch {
-		case errors.Is(err, ErrSessionExpired):
-			c.logger.Warn("authentication failed: %s", err)
-			c.invalidateWatches(err)
+		case err == ErrSessionExpired:
+			c.logger.Warn("authentication expired: %s", err)
+			c.resetSession(err)
 		case err != nil && c.conn != nil:
 			c.logger.Error("authentication failed: %s", err)
 			c.conn.Close()
+			if !disconnectTime.IsZero() && c.sessionExpired(disconnectTime) {
+				c.resetSession(ErrSessionExpired)
+			}
 		case err == nil:
 			if c.logInfo {
 				c.logger.Debug("authenticated: id=%d, timeout=%d", c.SessionID(), c.sessionTimeoutMs)
@@ -483,6 +491,7 @@ func (c *Conn) loop(ctx context.Context) {
 		}
 
 		c.setState(StateDisconnected)
+		disconnectTime = time.Now()
 
 		select {
 		case <-c.shouldQuit:
@@ -700,9 +709,6 @@ func (c *Conn) authenticate() error {
 		return err
 	}
 	if r.SessionID == 0 {
-		atomic.StoreInt64(&c.sessionID, int64(0))
-		c.passwd = emptyPassword
-		c.lastZxid = 0
 		c.setState(StateExpired)
 		return ErrSessionExpired
 	}
@@ -713,6 +719,13 @@ func (c *Conn) authenticate() error {
 	c.setState(StateHasSession)
 
 	return nil
+}
+
+func (c *Conn) resetSession(err error) {
+	atomic.StoreInt64(&c.sessionID, int64(0))
+	c.passwd = emptyPassword
+	c.lastZxid = 0
+	c.invalidateWatches(err)
 }
 
 func (c *Conn) sendData(req *request) error {
