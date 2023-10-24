@@ -1203,6 +1203,22 @@ type testLogger struct {
 	events []string
 }
 
+func (l *testLogger) Debug(msg string, args ...interface{}) {
+	l.Printf(msg, args...)
+}
+
+func (l *testLogger) Info(msg string, args ...interface{}) {
+	l.Printf(msg, args...)
+}
+
+func (l *testLogger) Warn(msg string, args ...interface{}) {
+	l.Printf(msg, args...)
+}
+
+func (l *testLogger) Error(msg string, args ...interface{}) {
+	l.Printf(msg, args...)
+}
+
 func (l *testLogger) Printf(msgFormat string, args ...interface{}) {
 	msg := fmt.Sprintf(msgFormat, args...)
 	fmt.Println(msg)
