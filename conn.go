@@ -386,12 +386,12 @@ func (c *Conn) connect() error {
 			c.conn = zkConn
 			c.setState(StateConnected)
 			if c.logInfo {
-				c.logger.Printf("connected to %s", c.Server())
+				c.logger.Debug("connected to %s", c.Server())
 			}
 			return nil
 		}
 
-		c.logger.Printf("failed to connect to %s: %v", c.Server(), err)
+		c.logger.Error("failed to connect to %s: %v", c.Server(), err)
 	}
 }
 
@@ -429,15 +429,15 @@ func (c *Conn) loop(ctx context.Context) {
 
 		err := c.authenticate()
 		switch {
-		case err == ErrSessionExpired:
-			c.logger.Printf("authentication failed: %s", err)
+		case errors.Is(err, ErrSessionExpired):
+			c.logger.Warn("authentication failed: %s", err)
 			c.invalidateWatches(err)
 		case err != nil && c.conn != nil:
-			c.logger.Printf("authentication failed: %s", err)
+			c.logger.Error("authentication failed: %s", err)
 			c.conn.Close()
 		case err == nil:
 			if c.logInfo {
-				c.logger.Printf("authenticated: id=%d, timeout=%d", c.SessionID(), c.sessionTimeoutMs)
+				c.logger.Debug("authenticated: id=%d, timeout=%d", c.SessionID(), c.sessionTimeoutMs)
 			}
 			c.hostProvider.Connected()        // mark success
 			c.closeChan = make(chan struct{}) // channel to tell send loop stop
@@ -450,12 +450,12 @@ func (c *Conn) loop(ctx context.Context) {
 				defer wg.Done()
 
 				if err := c.resendZkAuthFn(ctx, c); err != nil {
-					c.logger.Printf("error in resending auth creds: %v", err)
+					c.logger.Error("error in resending auth creds: %v", err)
 					return
 				}
 
 				if err := c.sendLoop(); err != nil || c.logInfo {
-					c.logger.Printf("send loop terminated: %v", err)
+					c.logger.Debug("send loop terminated: %v", err)
 				}
 			}()
 
@@ -471,7 +471,7 @@ func (c *Conn) loop(ctx context.Context) {
 					err = c.recvLoop(c.conn)
 				}
 				if err != io.EOF || c.logInfo {
-					c.logger.Printf("recv loop terminated: %v", err)
+					c.logger.Debug("recv loop terminated: %v", err)
 				}
 				if err == nil {
 					panic("zk: recvLoop should never return nil error")
@@ -645,7 +645,7 @@ func (c *Conn) sendSetWatches() {
 		for _, req := range reqs {
 			_, err := c.request(opSetWatches, req, res, nil)
 			if err != nil {
-				c.logger.Printf("Failed to set previous watches: %v", err)
+				c.logger.Warn("Failed to set previous watches: %v", err)
 				break
 			}
 		}
@@ -796,7 +796,7 @@ func (c *Conn) recvLoop(conn net.Conn) error {
 	for {
 		// package length
 		if err := conn.SetReadDeadline(time.Now().Add(c.recvTimeout)); err != nil {
-			c.logger.Printf("failed to set connection deadline: %v", err)
+			c.logger.Warn("failed to set connection deadline: %v", err)
 		}
 		_, err := io.ReadFull(conn, buf[:4])
 		if err != nil {
@@ -840,7 +840,7 @@ func (c *Conn) recvLoop(conn net.Conn) error {
 		} else if res.Xid == -2 {
 			// Ping response. Ignore.
 		} else if res.Xid < 0 {
-			c.logger.Printf("Xid < 0 (%d) but not ping or watcher event", res.Xid)
+			c.logger.Warn("Xid < 0 (%d) but not ping or watcher event", res.Xid)
 		} else {
 			if res.Zxid > 0 {
 				c.lastZxid = res.Zxid
@@ -854,7 +854,7 @@ func (c *Conn) recvLoop(conn net.Conn) error {
 			c.requestsLock.Unlock()
 
 			if !ok {
-				c.logger.Printf("Response for unknown request with xid %d", res.Xid)
+				c.logger.Warn("Response for unknown request with xid %d", res.Xid)
 			} else {
 				if res.Err != 0 {
 					err = res.Err.toError()
@@ -903,7 +903,7 @@ func (c *Conn) queueRequest(opcode int32, req interface{}, res interface{}, recv
 		select {
 		case c.sendChan <- rq:
 		case <-time.After(c.connectTimeout * 2):
-			c.logger.Printf("gave up trying to send opClose to server")
+			c.logger.Warn("gave up trying to send opClose to server")
 			rq.recvChan <- response{-1, ErrConnectionClosed}
 		}
 	default:
@@ -1344,7 +1344,7 @@ func resendZkAuth(ctx context.Context, c *Conn) error {
 	defer c.credsMu.Unlock()
 
 	if c.logInfo {
-		c.logger.Printf("re-submitting `%d` credentials after reconnect", len(c.creds))
+		c.logger.Debug("re-submitting `%d` credentials after reconnect", len(c.creds))
 	}
 
 	for _, cred := range c.creds {
@@ -1371,10 +1371,10 @@ func resendZkAuth(ctx context.Context, c *Conn) error {
 		select {
 		case res = <-resChan:
 		case <-c.closeChan:
-			c.logger.Printf("recv closed, cancel re-submitting credentials")
+			c.logger.Debug("recv closed, cancel re-submitting credentials")
 			return nil
 		case <-c.shouldQuit:
-			c.logger.Printf("should quit, cancel re-submitting credentials")
+			c.logger.Debug("should quit, cancel re-submitting credentials")
 			return nil
 		case <-ctx.Done():
 			return ctx.Err()
