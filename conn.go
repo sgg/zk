@@ -57,11 +57,6 @@ type watchPathType struct {
 // Dialer is a function to be used to establish a connection to a single host.
 type Dialer func(network, address string, timeout time.Duration) (net.Conn, error)
 
-// Logger is an interface that can be implemented to provide custom log output.
-type Logger interface {
-	Printf(string, ...interface{})
-}
-
 type authCreds struct {
 	scheme string
 	auth   []byte
