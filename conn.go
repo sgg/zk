@@ -391,7 +391,7 @@ func (c *Conn) connect() error {
 			return nil
 		}
 
-		c.logger.Error("failed to connect to %s: %v", c.Server(), err)
+		c.logger.Warn("failed to connect to %s: %v", c.Server(), err)
 	}
 }
 
@@ -438,7 +438,7 @@ func (c *Conn) loop(ctx context.Context) {
 			c.logger.Warn("authentication expired: %s", err)
 			c.resetSession(err)
 		case err != nil && c.conn != nil:
-			c.logger.Error("authentication failed: %s", err)
+			c.logger.Warn("authentication failed: %s", err)
 			c.conn.Close()
 			if !disconnectTime.IsZero() && c.sessionExpired(disconnectTime) {
 				c.resetSession(ErrSessionExpired)
